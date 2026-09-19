@@ -1,0 +1,23 @@
+{
+  "log_folder_override": "",
+  "log_files": [
+    "*.log"
+  ],
+  "service_account_json": "path/to/service-account.json",
+  "spreadsheet_id": "your-google-spreadsheet-id",
+  "sample_counts": [
+    1000
+  ],
+  "test_mode": false,
+  "collection_enabled": true,
+  "world_structures": [],
+  "resume_from": "",
+  "poll_seconds": 1.0,
+  "config_refresh_seconds": 30,
+  "start_from_end": false,
+  "config_sheet": "Config",
+  "history_sheet": "Benchmark History",
+  "archive_sheet": "Benchmark Archive",
+  "analysis_recent_days": 30,
+  "state_file": ".log_watcher_state.json"
+}

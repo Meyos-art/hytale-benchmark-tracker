@@ -1,0 +1,19 @@
+# Local credentials and machine-specific configuration
+*.json
+!config.example.json
+
+# Runtime state and logs
+.log_watcher_state.json
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# IDE and operating-system files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

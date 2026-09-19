@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hytale-benchmark-tracker"
+version = "1.0.0"
+description = "Collect Hytale performance reports and publish benchmark analyses to Google Sheets."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "gspread>=6.0.0",
+    "google-auth>=2.0.0",
+]
+
+[project.scripts]
+hytale-benchmark-tracker = "hytale_benchmark_tracker.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["hytale_benchmark_tracker*"]
