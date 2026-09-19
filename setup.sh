@@ -16,6 +16,7 @@ if [ ! -d .venv ]; then
     "$PYTHON" -m venv .venv
 fi
 
+./.venv/bin/python -m pip install --upgrade "pip==26.2.0"
 ./.venv/bin/python -m pip install --editable .
 
 if [ ! -f config.json ]; then

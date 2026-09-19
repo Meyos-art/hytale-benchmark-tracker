@@ -7,7 +7,7 @@ import gspread
 from .analysis import analysis_header, world_sheet_title
 from .config import config_bool
 from .constants import ARCHIVE_HEADERS
-from .google_api import _extended_value, ensure_worksheet, google_api_call
+from .google_api import GoogleFormula, _extended_value, ensure_worksheet, google_api_call
 from .history import format_history_status_rows
 
 
@@ -216,9 +216,9 @@ def cache_analysis_header(state: dict, column: int, value: str):
     headers[column] = value
 
 
-def benchmark_history_link(cfg: dict, history_ws, row_number: int) -> str:
+def benchmark_history_link(cfg: dict, history_ws, row_number: int) -> GoogleFormula:
     """Build the archive hyperlink to one permanent history row."""
-    return (
+    return GoogleFormula(
         f'=HYPERLINK("https://docs.google.com/spreadsheets/d/'
         f'{cfg["spreadsheet_id"]}/edit#gid={history_ws.id}&range=A{row_number}",'
         f'"Benchmark History row {row_number}")'

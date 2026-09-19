@@ -19,6 +19,7 @@ if (-not (Test-Path -LiteralPath ".venv")) {
     & $pythonExecutable @pythonArguments -m venv .venv
 }
 
+& ".\.venv\Scripts\python.exe" -m pip install --upgrade "pip==26.2.0"
 & ".\.venv\Scripts\python.exe" -m pip install --editable .
 
 if (-not (Test-Path -LiteralPath "config.json")) {

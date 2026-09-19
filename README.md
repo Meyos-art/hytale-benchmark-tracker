@@ -3,11 +3,24 @@
 Collect Hytale performance reports from local log files and publish complete
 benchmark history, per-world analyses, and archive controls to Google Sheets.
 
-## 1. Install Python
+## Quick start
 
-Python 3.10 or later is recommended.
+Requirements: Python 3.10 or later, a Google account, and local Hytale logs.
 
-## 2. Install the project
+1. Download or clone the repository.
+2. Run the installer for your operating system.
+3. Create a Google service account and share a blank spreadsheet with it.
+4. Complete the local `config.json` file.
+5. Start the tracker with `python log_to_sheets.py`.
+
+For the complete Google Cloud and configuration procedure, follow the
+[setup guide](docs/SETUP.md).
+
+> **Security:** Never commit or share `config.json` or your service account JSON
+> key. Only the Google Sheets API is required. Do not grant the service account
+> a Google Cloud Owner or Editor role.
+
+## Install
 
 ### Windows
 
@@ -21,133 +34,64 @@ powershell -ExecutionPolicy Bypass -File .\setup.ps1
 sh setup.sh
 ```
 
-Both installers create a local `.venv`, install the project and its
-dependencies, and create `config.json` from `config.example.json` when needed.
-They never overwrite an existing local configuration.
+The installer creates `.venv`, installs the project, and creates `config.json`
+from `config.example.json` if it does not already exist. Existing configuration
+is never overwritten.
 
-For a manual installation, run:
+## Minimum configuration
 
-```bash
-python -m venv .venv
-python -m pip install --editable .
+Set at least these values in `config.json`:
+
+```json
+{
+  "service_account_json": "C:/path/to/service-account.json",
+  "spreadsheet_id": "your-google-spreadsheet-id"
+}
 ```
 
-## 3. Prepare Google Sheets
+Keep the other settings from `config.example.json`. The spreadsheet ID may be
+provided either by itself or as a complete Google Sheets URL.
 
-1. Create a Google Cloud project.
-2. Enable the Google Sheets API and Google Drive API.
-3. Create a service account.
-4. Download its JSON key.
-5. Open your Google Sheet and share it with the service account email address as an Editor.
-6. Copy the Google Sheet ID into `config.json`.
-
-Example:
+On Windows, leaving `log_folder_override` empty automatically uses the default
+Hytale log directory:
 
 ```text
-https://docs.google.com/spreadsheets/d/SPREADSHEET_ID/edit
-                                     ^^^^^^^^^^^^^^
+%APPDATA%\Hytale\data\pre-release\Logs
 ```
 
-## 4. Configure the local connection
+Set `log_folder_override` only when the logs are stored somewhere else. Linux
+and macOS users must provide their local Hytale log directory explicitly.
 
-Copy `config.example.json` to `config.json`, then set the local connection
-values. Never commit `config.json` or the service account key.
-
-`config.json` stores the local settings required before connecting to Google:
-
-- `log_folder_override`: optional local path to the log folder
-- `service_account_json`: path to the Google service account JSON key
-- `spreadsheet_id`: Google Sheet ID
-- `state_file`: local file used to remember reading positions
-
-By default, `log_folder_override` remains empty. The `hytale_prerelease`
-profile automatically detects `%APPDATA%\Hytale\data\pre-release\Logs` for
-each user. Set the override only for a non-standard installation.
-
-On Linux or macOS, set `log_folder_override` to the local Hytale log directory,
-because the Windows `%APPDATA%` location is not available.
-
-These sensitive or machine-specific values are never copied to Google Sheets.
-Legacy configurations containing `log_folder` remain supported as a local
-override.
-
-The application validates the JSON syntax, required values, Google credential
-file, spreadsheet ID, log directory, file patterns, sample counts, and polling
-intervals before connecting to Google. Configuration errors include an explicit
-message describing what must be corrected.
-
-## 5. Configure data collection in Google Sheets
-
-On the first run, the script creates a `Config` sheet. It contains the shared,
-non-sensitive settings:
-
-- `collection_enabled`: checked when data collection is enabled
-- `test_mode`: marks new benchmarks as tests while checked
-- `resume_from`: earliest benchmark date and time to import
-- `log_profile`: safe local folder profile (`hytale_prerelease`)
-- `log_files`: file names or local patterns such as `*.log`, separated by commas
-- `sample_counts`: accepted Sample Count values
-- `world_structures`: allowed World Structure names; leave blank to accept all
-- `analysis_recent_days`: default recent-data window used by analysis sheets
-- `poll_seconds`: log polling interval
-- `config_refresh_seconds`: interval for reloading the Config sheet (minimum 8 seconds)
-
-Recommended `resume_from` format: `2026-09-10 18:30:00`.
-
-When data collection is disabled, reading positions do not advance. After data
-collection is enabled again, benchmarks older than `resume_from` are skipped.
-This makes it possible to exclude an entire test period.
-
-The Config sheet can change safe runtime settings, but it never writes values
-back to `config.json`. Local paths and credentials always remain local.
-
-## 6. Run the script
+## Run
 
 ```bash
 python log_to_sheets.py
 ```
 
-The script populates:
-
-- `Benchmark History`: one complete row per benchmark, including every extracted
-  metric and the raw benchmark block. This is the permanent history, even when
-  a benchmark is removed from analysis.
-- One analysis sheet for each `WorldStructure Name`.
-- `Benchmark Archive`: a lightweight index of benchmarks hidden from analysis,
-  with `Timestamp`, `WorldStructure Name`, `Sample Count`, `Block Hash`,
-  `Description`, and `Benchmark History Link` columns.
-- `Config`: shared, non-sensitive runtime settings.
-
-Each benchmark in an analysis sheet has a description and an `Archive`
-checkbox. A green title identifies a test benchmark without adding another row.
-Checking `Archive` hides the benchmark column and adds it to `Benchmark Archive`.
-To restore it, clear `Archive` in `Benchmark History` or in the analysis sheet.
-The corresponding row is then removed from `Benchmark Archive`.
-
-Each archived row contains a clickable link to the exact complete benchmark row
-in `Benchmark History`.
-
-The `.log_watcher_state.json` file stores the last reading position for every
-log file.
-
-## Project structure
-
-`log_to_sheets.py` remains the backward-compatible entry point. The application
-code is split into focused modules:
-
-- `constants.py`: parsing expressions, labels, and visual styles
-- `config.py`: local configuration and the safe Config sheet
-- `parser.py`: benchmark detection and metric extraction
-- `google_api.py`: authentication, retries, and shared Google API helpers
-- `history.py`: complete Benchmark History storage and formatting
-- `analysis.py`: per-world analysis sheets, filters, and column formatting
-- `archive.py`: archive index and synchronization of benchmark controls
-- `watcher.py`: log file state, streaming, and processing orchestration
-
-You can start the application with either command:
+Alternative entry points:
 
 ```bash
-python log_to_sheets.py
 python -m hytale_benchmark_tracker
 hytale-benchmark-tracker
 ```
+
+The tracker creates and maintains:
+
+- `Benchmark History`: the complete permanent data for every benchmark;
+- one analysis sheet for each `WorldStructure Name`;
+- `Benchmark Archive`: an index of benchmarks hidden from analysis;
+- `Config`: shared, non-sensitive runtime controls.
+
+Use `Test Mode` to mark new benchmarks as tests. Use the `Archive` checkbox to
+hide a benchmark from analysis without deleting it from `Benchmark History`.
+
+## Documentation
+
+- [Complete setup and configuration](docs/SETUP.md)
+- [Troubleshooting](docs/TROUBLESHOOTING.md)
+
+## Project structure
+
+`log_to_sheets.py` is the backward-compatible entry point. Application code is
+split into modules under `hytale_benchmark_tracker/` for configuration, parsing,
+Google API access, history, analysis, archiving, and log watching.

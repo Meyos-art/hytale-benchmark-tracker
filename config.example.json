@@ -13,7 +13,7 @@
   "world_structures": [],
   "resume_from": "",
   "poll_seconds": 1.0,
-  "config_refresh_seconds": 30,
+  "config_refresh_seconds": 10,
   "start_from_end": false,
   "config_sheet": "Config",
   "history_sheet": "Benchmark History",

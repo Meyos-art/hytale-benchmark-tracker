@@ -9,10 +9,13 @@ from google.oauth2.service_account import Credentials
 from .constants import REQUIRED_SPREADSHEET_LOCALE
 
 
+class GoogleFormula(str):
+    """A formula explicitly created by trusted application code."""
+
+
 def google_client(service_account_path: str):
     scopes = [
         "https://www.googleapis.com/auth/spreadsheets",
-        "https://www.googleapis.com/auth/drive",
     ]
     creds = Credentials.from_service_account_file(service_account_path, scopes=scopes)
     return gspread.authorize(creds)
@@ -77,6 +80,6 @@ def _extended_value(value: object) -> dict:
         return {"boolValue": value}
     if isinstance(value, (int, float)):
         return {"numberValue": value}
-    if isinstance(value, str) and value.startswith("=HYPERLINK("):
-        return {"formulaValue": value}
+    if isinstance(value, GoogleFormula):
+        return {"formulaValue": str(value)}
     return {"stringValue": "" if value is None else str(value)}
