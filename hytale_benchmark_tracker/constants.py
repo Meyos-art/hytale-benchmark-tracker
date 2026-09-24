@@ -8,7 +8,9 @@ WORLD_RE = re.compile(r"WorldStructure Name:\s*'?\s*([^'\r\n]+?)\s*'?\s*$", re.I
 
 END_RE = re.compile(r"Missed/Total Ratio:\s*([0-9.,]+)\s*%", re.IGNORECASE)
 
-PREFIX_RE = re.compile(r"^.*?\|INFO\|\|SERVER\s*-\s*")
+# Hytale release builds include a logger name between INFO and SERVER, while
+# older pre-release builds leave that field empty. Accept both layouts.
+PREFIX_RE = re.compile(r"^.*?\|INFO\|[^|\r\n]*\|SERVER\s*-\s*")
 
 LINE_DATA_RE = re.compile(r"^(?P<label>.*?):\s*(?P<data>.+?)\s*$")
 
