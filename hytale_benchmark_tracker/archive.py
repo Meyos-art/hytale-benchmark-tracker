@@ -461,6 +461,12 @@ def sync_benchmark_controls(
             metadata.append([""] * last_column)
         for row in metadata:
             row.extend([""] * (last_column - len(row)))
+        state["column_hashes"] = [
+            str(value) for value in metadata[3][:last_column]
+        ]
+        state["column_descriptions"] = [
+            str(value) for value in metadata[1][:last_column]
+        ]
         cached_test_states = state.setdefault("test_states", {})
 
         for column in range(2, last_column):

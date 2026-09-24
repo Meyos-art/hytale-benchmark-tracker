@@ -8,14 +8,19 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from .analysis import (
-    add_comparison_column, add_detail_groups, analysis_header,
+    BASIC_WORLD_NAME, add_comparison_column, add_detail_groups, analysis_header,
+    apply_basic_reference_column, apply_basic_reference_to_all,
+    basic_reference_from_rows, basic_reference_identity,
     apply_analysis_time_filter, default_analysis_controls,
-    get_world_analysis_state, load_existing_analysis_sheets,
+    get_world_analysis_state, has_basic_reference_column,
+    load_existing_analysis_sheets,
+    load_latest_basic_reference,
 )
 from .archive import ensure_archive_sheet, sync_benchmark_controls, unique_analysis_states
 from .config import (
     ensure_config_sheet, parse_resume_datetime, read_sheet_config,
-    resolve_log_folder, validate_log_file_patterns,
+    resolve_log_folder, update_basic_reference_status,
+    validate_log_file_patterns,
 )
 from .constants import END_RE, START_RE
 from .google_api import (
@@ -95,6 +100,9 @@ def process_completed_block(
     analysis_cache: dict,
     block: List[str],
     cfg: dict,
+    basic_reference_state: dict,
+    config_ws,
+    base_cfg: dict,
 ):
     clean_block = [strip_prefix(line) for line in block]
     timestamp, timestamp_value = block_timestamp(block)
@@ -158,6 +166,36 @@ def process_completed_block(
         add_detail_groups(analysis_ws, display_rows)
         analysis_state["groups_updated"] = True
 
+    current_reference = basic_reference_state.get("reference")
+    if world.casefold() == BASIC_WORLD_NAME.casefold():
+        candidate = basic_reference_from_rows(
+            analysis_timestamp,
+            benchmark_hash,
+            display_rows,
+        )
+        current_time = (
+            datetime.fromisoformat(current_reference["timestamp"])
+            if current_reference else None
+        )
+        candidate_time = datetime.fromisoformat(candidate["timestamp"])
+        if (
+            (current_time is None or candidate_time >= current_time)
+            and basic_reference_identity(candidate)
+            != basic_reference_identity(current_reference)
+        ):
+            basic_reference_state["reference"] = candidate
+            apply_basic_reference_to_all(analysis_cache, candidate)
+            update_basic_reference_status(config_ws, base_cfg, candidate)
+            print(f"[BASIC] Static reference updated: {candidate['timestamp']}")
+    elif not has_basic_reference_column(analysis_state):
+        # A newly-created world sheet receives the selected reference without
+        # rewriting all other analysis sheets.
+        apply_basic_reference_column(
+            analysis_ws,
+            analysis_state,
+            current_reference,
+        )
+
     if history_result == "added" or analysis_added:
         print(f"[ADD] {timestamp} | {world} | hash={benchmark_hash[:8]}")
     else:
@@ -214,6 +252,31 @@ def process_stream(cfg: dict):
         archive_ws,
         runtime_cfg,
     )
+    basic_reference_state = {
+        "reference": load_latest_basic_reference(
+            analysis_cache,
+            runtime_cfg["history_sheet"],
+        )
+    }
+    apply_basic_reference_to_all(
+        analysis_cache,
+        basic_reference_state["reference"],
+    )
+    update_basic_reference_status(
+        config_ws,
+        cfg,
+        basic_reference_state["reference"],
+    )
+    if basic_reference_state["reference"]:
+        print(
+            "[BASIC] Static reference: "
+            f"{basic_reference_state['reference']['timestamp']}"
+        )
+    else:
+        print(
+            "[SETUP] No active Basic benchmark found. Run a benchmark with "
+            "WorldStructure Name Basic."
+        )
 
     saved_state = load_state(state_path)
     positions = {
@@ -268,6 +331,29 @@ def process_stream(cfg: dict):
                     archive_ws,
                     updated_cfg,
                 )
+                refreshed_reference = load_latest_basic_reference(
+                    analysis_cache,
+                    updated_cfg["history_sheet"],
+                    basic_reference_state.get("reference"),
+                )
+                if refreshed_reference != basic_reference_state.get("reference"):
+                    basic_reference_state["reference"] = refreshed_reference
+                    apply_basic_reference_to_all(
+                        analysis_cache,
+                        refreshed_reference,
+                    )
+                    update_basic_reference_status(
+                        config_ws,
+                        cfg,
+                        refreshed_reference,
+                    )
+                    print(
+                        "[BASIC] Static reference updated: "
+                        + (
+                            refreshed_reference["timestamp"]
+                            if refreshed_reference else "missing"
+                        )
+                    )
                 if (
                     updated_cfg.get("analysis_recent_days")
                     != runtime_cfg.get("analysis_recent_days")
@@ -365,6 +451,9 @@ def process_stream(cfg: dict):
                                 analysis_cache,
                                 context["block"],
                                 runtime_cfg,
+                                basic_reference_state,
+                                config_ws,
+                                cfg,
                             )
                             context["collecting"] = False
                             context["block"] = []

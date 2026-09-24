@@ -53,10 +53,11 @@ Keep the other settings from `config.example.json`. The spreadsheet ID may be
 provided either by itself or as a complete Google Sheets URL.
 
 On Windows, leaving `log_folder_override` empty automatically uses the default
-Hytale log directory:
+directory for the selected safe `log_profile`:
 
 ```text
-%APPDATA%\Hytale\data\pre-release\Logs
+hytale_prerelease -> %APPDATA%\Hytale\data\pre-release\Logs
+hytale_release    -> %APPDATA%\Hytale\UserData\Logs
 ```
 
 Set `log_folder_override` only when the logs are stored somewhere else. Linux
@@ -84,6 +85,13 @@ The tracker creates and maintains:
 
 Use `Test Mode` to mark new benchmarks as tests. Use the `Archive` checkbox to
 hide a benchmark from analysis without deleting it from `Benchmark History`.
+
+Run at least one benchmark with `WorldStructure Name` set to `Basic`. The
+latest non-archived `Basic` benchmark becomes the fixed reference in column C
+of every analysis sheet. It stays visible while scrolling, is excluded from
+the time filter, and is replaced automatically by a newer active `Basic` run.
+All `Basic` runs remain in `Benchmark History`. If `world_structures` is
+restricted, include `Basic` in that list.
 
 ## Documentation
 

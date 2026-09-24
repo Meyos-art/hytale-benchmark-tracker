@@ -144,10 +144,14 @@ Windows paths can use forward slashes or escaped backslashes:
 This example only shows the two Google connection fields. Keep all other
 settings from `config.example.json` in the real file.
 
-By default, `log_folder_override` is empty. The `hytale_prerelease` profile
-automatically detects `%APPDATA%\Hytale\data\pre-release\Logs` for each Windows
-user. Set the override only for a non-standard installation. On Linux or macOS,
-set it to the local Hytale log directory because `%APPDATA%` is unavailable.
+By default, `log_folder_override` is empty. Windows users can select one of the
+safe local profiles:
+
+- `hytale_prerelease`: `%APPDATA%\Hytale\data\pre-release\Logs`;
+- `hytale_release`: `%APPDATA%\Hytale\UserData\Logs`.
+
+Set the override only for a non-standard installation. On Linux or macOS, set
+it to the local Hytale log directory because `%APPDATA%` is unavailable.
 
 Local paths and credentials are never copied to Google Sheets. Legacy
 configurations containing `log_folder` remain supported as a local override.
@@ -164,7 +168,8 @@ non-sensitive settings:
 - `collection_enabled`: enables data collection while checked;
 - `test_mode`: marks new benchmarks as tests while checked;
 - `resume_from`: earliest benchmark date and time to import;
-- `log_profile`: safe local folder profile (`hytale_prerelease`);
+- `log_profile`: safe local folder profile (`hytale_prerelease` or
+  `hytale_release`);
 - `log_files`: file names or local patterns such as `*.log`, separated by commas;
 - `sample_counts`: accepted Sample Count values;
 - `world_structures`: accepted World Structure names, or blank for all;

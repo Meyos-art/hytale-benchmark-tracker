@@ -12,7 +12,11 @@ if __name__ == "__main__" and not __package__:
     print("Run this command from the project root: python log_to_sheets.py")
     raise SystemExit(2)
 
-from .constants import DEFAULT_LOG_PROFILE, SUPPORTED_LOG_PROFILES
+from .constants import (
+    DEFAULT_LOG_PROFILE,
+    LOG_PROFILE_PATHS,
+    SUPPORTED_LOG_PROFILES,
+)
 from .google_api import ensure_worksheet, google_api_call
 
 
@@ -153,16 +157,13 @@ def resolve_log_folder(cfg: dict) -> Path:
         source = "local override"
     else:
         profile = validate_log_profile(cfg.get("log_profile", DEFAULT_LOG_PROFILE))
-        if profile == DEFAULT_LOG_PROFILE:
-            appdata = os.environ.get("APPDATA", "").strip()
-            if not appdata:
-                raise ValueError(
-                    "APPDATA is unavailable; set log_folder_override in config.json"
-                )
-            folder = Path(appdata) / "Hytale" / "data" / "pre-release" / "Logs"
-            source = f"profile {profile}"
-        else:  # Defensive guard for future profiles.
-            raise ValueError(f"Unsupported log profile: {profile}")
+        appdata = os.environ.get("APPDATA", "").strip()
+        if not appdata:
+            raise ValueError(
+                "APPDATA is unavailable; set log_folder_override in config.json"
+            )
+        folder = Path(appdata).joinpath(*LOG_PROFILE_PATHS[profile])
+        source = f"profile {profile}"
 
     try:
         resolved = folder.resolve(strict=True)
@@ -330,6 +331,8 @@ def config_default_rows(cfg: dict) -> List[List[object]]:
          "Default Recent days value for new analysis sheets"],
         ["config_refresh_seconds", cfg.get("config_refresh_seconds", 30),
          f"Interval for reloading this sheet, in seconds (minimum {MIN_CONFIG_REFRESH_SECONDS:g})"],
+        ["basic_reference_status", "Checking...",
+         "Read-only status for the static Basic reference used in analysis sheets"],
     ]
 
 
@@ -401,6 +404,9 @@ def ensure_config_sheet(book, cfg: dict):
         for index, row in enumerate(values, start=1)
         if row and str(row[0]).strip()
     }
+    cfg["_basic_reference_status_row"] = config_rows.get(
+        "basic_reference_status", len(defaults)
+    )
     enabled_row = config_rows.get("collection_enabled", 2)
     test_mode_row = config_rows.get("test_mode", 3)
     log_profile_row = config_rows.get("log_profile")
@@ -641,6 +647,50 @@ def ensure_config_sheet(book, cfg: dict):
         })
     google_api_call(ws.spreadsheet.batch_update, {"requests": requests})
     return ws
+
+
+def update_basic_reference_status(ws, cfg: dict, reference: Optional[dict]):
+    """Update the Config dashboard only when the Basic status changes."""
+    status = (
+        f"Ready - latest active Basic: {reference['timestamp']}"
+        if reference else
+        "Missing - run a benchmark with WorldStructure Name Basic"
+    )
+    if cfg.get("_basic_reference_status_value") == status:
+        return
+    row = int(cfg.get(
+        "_basic_reference_status_row", len(config_default_rows(cfg))
+    ))
+    color = (
+        {"red": 0.86, "green": 0.96, "blue": 0.89}
+        if reference else
+        {"red": 1.0, "green": 0.91, "blue": 0.80}
+    )
+    google_api_call(ws.spreadsheet.batch_update, {"requests": [{
+        "updateCells": {
+            "range": {
+                "sheetId": ws.id,
+                "startRowIndex": row - 1,
+                "endRowIndex": row,
+                "startColumnIndex": 1,
+                "endColumnIndex": 2,
+            },
+            "rows": [{"values": [{
+                "userEnteredValue": {"stringValue": status},
+                "userEnteredFormat": {
+                    "backgroundColor": color,
+                    "horizontalAlignment": "LEFT",
+                    "textFormat": {
+                        "bold": True,
+                        "fontFamily": "Arial",
+                        "fontSize": 8,
+                    },
+                },
+            }]}],
+            "fields": "userEnteredValue,userEnteredFormat",
+        }
+    }]})
+    cfg["_basic_reference_status_value"] = status
 
 
 def read_sheet_config(ws, base_cfg: dict) -> dict:

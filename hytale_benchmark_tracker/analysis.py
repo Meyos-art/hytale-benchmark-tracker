@@ -12,6 +12,13 @@ from .google_api import _extended_value, ensure_worksheet, google_api_call
 from .history import remove_legacy_unit_column
 
 
+BASIC_WORLD_NAME = "Basic"
+BASIC_REFERENCE_PREFIX = "Basic | "
+BASIC_REFERENCE_MISSING = "Basic required"
+LEGACY_BASIC_REFERENCE_PREFIX = "Basic reference | "
+LEGACY_BASIC_REFERENCE_MISSING = "Basic reference required"
+
+
 def canonical_analysis_key(key: str) -> str:
     """Remove shifting Stage-N suffixes from stored analysis row keys."""
     return STAGE_TOKEN_RE.sub("", str(key))
@@ -542,6 +549,331 @@ def analysis_header(value: object) -> str:
     if re.fullmatch(r"\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\.\d+", text):
         return text.split(".", 1)[0]
     return text
+
+
+def basic_reference_from_rows(
+    timestamp: object,
+    benchmark_hash: str,
+    display_rows: List[Dict[str, object]],
+    description: str = "",
+) -> dict:
+    """Build the portable snapshot used by the static Basic column."""
+    return {
+        "timestamp": analysis_header(timestamp),
+        "source_hash": str(benchmark_hash),
+        "description": str(description),
+        "values": {
+            str(row["key"]): row.get("value", "")
+            for row in display_rows
+        },
+    }
+
+
+def basic_reference_identity(reference: Optional[dict]):
+    """Return a stable identity without comparing the full metrics mapping."""
+    if not reference:
+        return None
+    return reference.get("source_hash") or reference.get("timestamp")
+
+
+def _is_basic_reference_header(value: object) -> bool:
+    text = str(value).strip()
+    return text in {
+        BASIC_REFERENCE_MISSING,
+        LEGACY_BASIC_REFERENCE_MISSING,
+    } or text.startswith(
+        (BASIC_REFERENCE_PREFIX, LEGACY_BASIC_REFERENCE_PREFIX)
+    )
+
+
+def basic_reference_header(reference: dict) -> str:
+    """Return a compact title while retaining the full timestamp in state."""
+    timestamp = str(reference.get("timestamp", ""))
+    try:
+        compact_timestamp = datetime.fromisoformat(timestamp).strftime(
+            "%d/%m %H:%M"
+        )
+    except ValueError:
+        compact_timestamp = timestamp
+    return f"{BASIC_REFERENCE_PREFIX}{compact_timestamp}"
+
+
+def has_basic_reference_column(state: dict) -> bool:
+    """Return whether column C is already reserved for the Basic snapshot."""
+    headers = state.get("headers", [])
+    return len(headers) > 2 and _is_basic_reference_header(headers[2])
+
+
+def apply_basic_reference_column(ws, state: dict, reference: Optional[dict]):
+    """Create or refresh the fixed Basic reference in analysis column C."""
+    headers = state.setdefault("headers", ["Key", "Metrics"])
+    keys = state.get("keys", [])
+    has_reference_column = has_basic_reference_column(state)
+    header = (
+        basic_reference_header(reference)
+        if reference else BASIC_REFERENCE_MISSING
+    )
+    description = (
+        str(reference.get("description", ""))
+        if reference else
+        "Run a benchmark with WorldStructure Name Basic"
+    )
+    values = reference.get("values", {}) if reference else {}
+    column_values = [header, description, "", ""] + [
+        values.get(key, "") for key in keys[1:]
+    ]
+    last_row = max(4, len(column_values))
+
+    requests = []
+    if not has_reference_column:
+        requests.append({
+            "insertDimension": {
+                "range": {
+                    "sheetId": ws.id,
+                    "dimension": "COLUMNS",
+                    "startIndex": 2,
+                    "endIndex": 3,
+                },
+                "inheritFromBefore": False,
+            }
+        })
+
+    requests.append({
+        "updateCells": {
+            "range": {
+                "sheetId": ws.id,
+                "startRowIndex": 0,
+                "endRowIndex": last_row,
+                "startColumnIndex": 2,
+                "endColumnIndex": 3,
+            },
+            "rows": [
+                {"values": [{"userEnteredValue": _extended_value(value)}]}
+                for value in column_values
+            ],
+            "fields": "userEnteredValue",
+        }
+    })
+    # The reference is informational. It must never expose an Archive checkbox
+    # or a hash, otherwise archive synchronization would treat it as a benchmark.
+    requests.append({
+        "updateCells": {
+            "range": {
+                "sheetId": ws.id,
+                "startRowIndex": 2,
+                "endRowIndex": 4,
+                "startColumnIndex": 2,
+                "endColumnIndex": 3,
+            },
+            "rows": [{"values": [{}]}, {"values": [{}]}],
+            "fields": "userEnteredValue,dataValidation",
+        }
+    })
+    if last_row > 4:
+        requests.extend([
+            {
+                "copyPaste": {
+                    "source": {
+                        "sheetId": ws.id,
+                        "startRowIndex": 4,
+                        "endRowIndex": last_row,
+                        "startColumnIndex": 1,
+                        "endColumnIndex": 2,
+                    },
+                    "destination": {
+                        "sheetId": ws.id,
+                        "startRowIndex": 4,
+                        "endRowIndex": last_row,
+                        "startColumnIndex": 2,
+                        "endColumnIndex": 3,
+                    },
+                    "pasteType": "PASTE_FORMAT",
+                }
+            },
+            {
+                "repeatCell": {
+                    "range": {
+                        "sheetId": ws.id,
+                        "startRowIndex": 4,
+                        "endRowIndex": last_row,
+                        "startColumnIndex": 2,
+                        "endColumnIndex": 3,
+                    },
+                    "cell": {"userEnteredFormat": {
+                        "horizontalAlignment": "RIGHT",
+                        "textFormat": {"fontFamily": "Arial", "fontSize": 6},
+                    }},
+                    "fields": (
+                        "userEnteredFormat.horizontalAlignment,"
+                        "userEnteredFormat.textFormat.fontFamily,"
+                        "userEnteredFormat.textFormat.fontSize"
+                    ),
+                }
+            },
+        ])
+
+    ready_color = {"red": 0.07, "green": 0.38, "blue": 0.42}
+    missing_color = {"red": 0.72, "green": 0.42, "blue": 0.08}
+    requests.extend([
+        {
+            "repeatCell": {
+                "range": {
+                    "sheetId": ws.id,
+                    "startRowIndex": 0,
+                    "endRowIndex": 1,
+                    "startColumnIndex": 2,
+                    "endColumnIndex": 3,
+                },
+                "cell": {"userEnteredFormat": {
+                    "backgroundColor": ready_color if reference else missing_color,
+                    "horizontalAlignment": "CENTER",
+                    "verticalAlignment": "MIDDLE",
+                    "wrapStrategy": "CLIP",
+                    "textFormat": {
+                        "bold": True,
+                        "fontFamily": "Arial",
+                        "fontSize": 6,
+                        "foregroundColor": {"red": 1, "green": 1, "blue": 1},
+                    },
+                }},
+                "fields": "userEnteredFormat",
+            }
+        },
+        {
+            "repeatCell": {
+                "range": {
+                    "sheetId": ws.id,
+                    "startRowIndex": 1,
+                    "endRowIndex": 4,
+                    "startColumnIndex": 2,
+                    "endColumnIndex": 3,
+                },
+                "cell": {"userEnteredFormat": {
+                    "backgroundColor": (
+                        {"red": 0.88, "green": 0.96, "blue": 0.96}
+                        if reference else
+                        {"red": 1.0, "green": 0.94, "blue": 0.82}
+                    ),
+                    "textFormat": {"fontFamily": "Arial", "fontSize": 6},
+                    "verticalAlignment": "MIDDLE",
+                    "wrapStrategy": "CLIP",
+                }},
+                "fields": "userEnteredFormat",
+            }
+        },
+        {
+            "updateDimensionProperties": {
+                "range": {
+                    "sheetId": ws.id,
+                    "dimension": "COLUMNS",
+                    "startIndex": 2,
+                    "endIndex": 3,
+                },
+                "properties": {"pixelSize": 95, "hiddenByUser": False},
+                "fields": "pixelSize,hiddenByUser",
+            }
+        },
+        {
+            "updateSheetProperties": {
+                "properties": {
+                    "sheetId": ws.id,
+                    "gridProperties": {"frozenColumnCount": 3},
+                },
+                "fields": "gridProperties.frozenColumnCount",
+            }
+        },
+    ])
+    google_api_call(ws.spreadsheet.batch_update, {"requests": requests})
+
+    if not has_reference_column:
+        headers.insert(2, header)
+        state.setdefault("column_hashes", ["", ""]).insert(2, "")
+        state.setdefault("column_descriptions", ["", ""]).insert(
+            2, description
+        )
+    else:
+        headers[2] = header
+        descriptions = state.setdefault("column_descriptions", ["", ""])
+        if len(descriptions) > 2:
+            descriptions[2] = description
+
+
+def apply_basic_reference_to_all(cache: dict, reference: Optional[dict]):
+    """Refresh each physical analysis sheet exactly once."""
+    seen = set()
+    for ws, state in cache.values():
+        if ws.id in seen:
+            continue
+        seen.add(ws.id)
+        apply_basic_reference_column(ws, state, reference)
+
+
+def load_latest_basic_reference(
+    cache: dict,
+    history_title: str,
+    current: Optional[dict] = None,
+) -> Optional[dict]:
+    """Load the newest non-archived Basic benchmark from its analysis sheet."""
+    expected_title = world_sheet_title(BASIC_WORLD_NAME, history_title).casefold()
+    selected = None
+    for ws, state in cache.values():
+        if ws.title.casefold() != expected_title:
+            continue
+        headers = state.get("headers", [])
+        hashes = state.get("column_hashes", [])
+        for column, raw_header in enumerate(headers[2:], start=2):
+            header = str(raw_header).strip()
+            if (
+                not header
+                or header.startswith("ARCHIVED | ")
+                or _is_basic_reference_header(header)
+            ):
+                continue
+            try:
+                timestamp = datetime.fromisoformat(analysis_header(header))
+            except (TypeError, ValueError):
+                continue
+            benchmark_hash = (
+                str(hashes[column]).strip() if column < len(hashes) else ""
+            )
+            candidate = (
+                timestamp, column, benchmark_hash,
+                analysis_header(header), ws, state,
+            )
+            if selected is None or candidate[:2] > selected[:2]:
+                selected = candidate
+        break
+
+    if selected is None:
+        return None
+    _, column, benchmark_hash, header, ws, state = selected
+    descriptions = state.get("column_descriptions", [])
+    selected_description = (
+        str(descriptions[column]) if column < len(descriptions) else ""
+    )
+    if (
+        current
+        and basic_reference_identity(current) == (benchmark_hash or header)
+        and str(current.get("description", "")) == selected_description
+    ):
+        return current
+
+    last_row = max(4, len(state.get("keys", [])) + 3)
+    letter = gspread.utils.rowcol_to_a1(1, column + 1).rstrip("1")
+    rows = google_api_call(ws.get, range_name=f"{letter}1:{letter}{last_row}")
+    cells = [row[0] if row else "" for row in rows]
+    cells += [""] * (last_row - len(cells))
+    return {
+        "timestamp": header,
+        "source_hash": benchmark_hash,
+        "description": str(cells[1]) if len(cells) > 1 else "",
+        "values": {
+            key: cells[offset] if offset < len(cells) else ""
+            for offset, key in enumerate(
+                state.get("keys", [])[1:], start=4
+            )
+        },
+    }
 
 
 def analysis_visibility_requests(
@@ -1164,3 +1496,5 @@ def add_comparison_column(
     )
     state["headers"].append(header)
     state.setdefault("hashes", set()).add(benchmark_hash)
+    state.setdefault("column_hashes", ["", ""]).append(benchmark_hash)
+    state.setdefault("column_descriptions", ["", ""]).append(description)

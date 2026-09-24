@@ -53,10 +53,12 @@ Check that:
 - the target file ends in `.log`;
 - the account running the tracker can read the directory and file.
 
-With the default Windows profile, leave `log_folder_override` empty to use:
+With a Windows profile, leave `log_folder_override` empty and select the
+matching location:
 
 ```text
-%APPDATA%\Hytale\data\pre-release\Logs
+hytale_prerelease -> %APPDATA%\Hytale\data\pre-release\Logs
+hytale_release    -> %APPDATA%\Hytale\UserData\Logs
 ```
 
 Settings changed in the Google `Config` sheet do not write back to local

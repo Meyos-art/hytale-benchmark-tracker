@@ -38,7 +38,12 @@ REQUIRED_SPREADSHEET_LOCALE = "en_US"
 
 DEFAULT_LOG_PROFILE = "hytale_prerelease"
 
-SUPPORTED_LOG_PROFILES = {DEFAULT_LOG_PROFILE}
+LOG_PROFILE_PATHS = {
+    "hytale_prerelease": ("Hytale", "data", "pre-release", "Logs"),
+    "hytale_release": ("Hytale", "UserData", "Logs"),
+}
+
+SUPPORTED_LOG_PROFILES = set(LOG_PROFILE_PATHS)
 
 ARCHIVE_HEADERS = [
     "Timestamp",
