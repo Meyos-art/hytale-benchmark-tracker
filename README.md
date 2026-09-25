@@ -3,6 +3,10 @@
 Collect Hytale performance reports from local log files and publish complete
 benchmark history, per-world analyses, and archive controls to Google Sheets.
 
+<p align="center">
+  <img src="docs/images/benchmark-analysis.png" alt="Hytale Benchmark Tracker analysis sheet" width="900">
+</p>
+
 ## Quick start
 
 Requirements: Python 3.10 or later, a Google account, and local Hytale logs.
