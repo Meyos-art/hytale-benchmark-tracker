@@ -5,11 +5,11 @@ from typing import Dict, List, Optional, Tuple
 
 from .config import cache_runtime_filters
 from .constants import (
-    GRID_RE, HISTORY_FIXED_STAGE_ORDER, HISTORY_MEMORY_DETAIL_ORDER,
-    HISTORY_METADATA_ORDER, HISTORY_STAGE_DETAIL_ORDER, LINE_DATA_RE,
-    MAJOR_NUMERIC_SECTIONS, MAJOR_TEXT_SECTIONS, MEMORY_GRID_INDEX_RE,
-    PREFIX_RE, PROP_STAGE_RE, STAGE_HEADER_RE, STAGE_RE, STAGE_SUFFIX_RE,
-    START_RE, WORLD_RE,
+    CONTENT_INITIALIZATION_ORDER, GRID_RE, HISTORY_FIXED_STAGE_ORDER,
+    HISTORY_MEMORY_DETAIL_ORDER, HISTORY_METADATA_ORDER,
+    HISTORY_STAGE_DETAIL_ORDER, LINE_DATA_RE, MAJOR_NUMERIC_SECTIONS,
+    MAJOR_TEXT_SECTIONS, MEMORY_GRID_INDEX_RE, PREFIX_RE, PROP_STAGE_RE,
+    STAGE_HEADER_RE, STAGE_RE, STAGE_SUFFIX_RE, START_RE, WORLD_RE,
 )
 
 
@@ -79,6 +79,15 @@ def history_stage_sort_key(parts: List[str], original_index: int) -> tuple:
     if len(parts) < 2:
         return (-1, 0, original_index)
     stage = parts[1]
+    if stage in CONTENT_INITIALIZATION_ORDER:
+        # Dynamic Bounds now contains one timing per stage. Keep those child
+        # values under their parent instead of mixing them with normal stages.
+        child_order = 0 if len(parts) == 2 else 1
+        return (
+            CONTENT_INITIALIZATION_ORDER[stage],
+            child_order,
+            original_index,
+        )
     prop_match = PROP_STAGE_RE.fullmatch(stage)
     stage_order = (
         100 + int(prop_match.group(1))
@@ -155,6 +164,8 @@ def parse_block(
     current_stage: Optional[str] = None
     current_grid: Optional[str] = None
     current_major: Optional[str] = None
+    current_subreport: Optional[str] = None
+    subreport_indent = -1
     major_indent = 0
     spacer_count = 0
 
@@ -172,6 +183,9 @@ def parse_block(
             continue
         indent = len(raw_line) - len(raw_line.lstrip("\t "))
         line = raw_line.lstrip("\t ")
+        if current_subreport and indent <= subreport_indent:
+            current_subreport = None
+            subreport_indent = -1
 
         # WorldStructure Name contains text rather than a numeric value.
         wm = WORLD_RE.search(line)
@@ -200,10 +214,34 @@ def parse_block(
             major_indent = indent
             current_stage = None
             current_grid = None
+            current_subreport = None
+            subreport_indent = -1
             value = section_data.group("data").strip() if section_data else ""
             if section_data:
                 flat[section_name] = value
             add_display_row(f"section:{section_name}", section_name, value, kind="section")
+            continue
+
+        if (
+            current_major == "Content Generation"
+            and section_data
+            and section_name in CONTENT_INITIALIZATION_ORDER
+        ):
+            value = section_data.group("data").strip()
+            flat[f"{current_major} / {section_name}"] = value
+            level = max(1, indent - major_indent)
+            add_display_row(
+                f"subcategory:{current_major}:{section_name}",
+                section_name,
+                value,
+                level=level,
+                kind="subcategory",
+            )
+            current_stage = None
+            current_grid = None
+            if section_name == "Dynamic Bounds Initialization":
+                current_subreport = section_name
+                subreport_indent = indent
             continue
 
         grid_m = GRID_RE.match(line)
@@ -221,8 +259,21 @@ def parse_block(
 
         stage_m = STAGE_RE.match(line)
         if stage_m:
-            current_stage = canonical_stage_label(stage_m.group("label"))
+            stage_label = canonical_stage_label(stage_m.group("label"))
             value = stage_m.group("data").strip()
+            if current_subreport and indent > subreport_indent:
+                flat[
+                    f"{current_major} / {current_subreport} / {stage_label}"
+                ] = value
+                level = max(2, indent - major_indent)
+                add_display_row(
+                    f"metric:{current_major}:{current_subreport}:{stage_label}",
+                    stage_label,
+                    value,
+                    level=level,
+                )
+                continue
+            current_stage = stage_label
             flat[f"{current_major} / {current_stage}"] = value
             level = max(1, indent - major_indent) if current_major else indent
             add_display_row(

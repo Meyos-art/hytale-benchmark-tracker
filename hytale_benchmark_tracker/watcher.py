@@ -19,7 +19,7 @@ from .analysis import (
 from .archive import ensure_archive_sheet, sync_benchmark_controls, unique_analysis_states
 from .config import (
     ensure_config_sheet, parse_resume_datetime, read_sheet_config,
-    resolve_log_folder, update_basic_reference_status,
+    resolve_log_folder, update_active_log_status, update_basic_reference_status,
     validate_log_file_patterns,
 )
 from .constants import END_RE, START_RE
@@ -63,6 +63,24 @@ def save_state(path: Path, state: dict):
 def resolve_log_paths(cfg: dict) -> List[Path]:
     """Resolve configured file names and patterns to existing log files."""
     folder = resolve_log_folder(cfg)
+    if cfg.get("follow_latest_log", False):
+        newest_path: Optional[Path] = None
+        newest_key: Optional[Tuple[int, str]] = None
+        for candidate in folder.glob("*.log"):
+            try:
+                resolved = candidate.resolve(strict=True)
+                if not resolved.is_relative_to(folder) or not resolved.is_file():
+                    continue
+                key = (resolved.stat().st_mtime_ns, resolved.name.casefold())
+            except OSError:
+                # A rotating log can disappear between directory enumeration
+                # and stat(). It will be considered during the next refresh.
+                continue
+            if newest_key is None or key > newest_key:
+                newest_path = resolved
+                newest_key = key
+        return [newest_path] if newest_path is not None else []
+
     paths: List[Path] = []
     for name in validate_log_file_patterns(cfg.get("log_files", [])):
         if any(char in name for char in "*?["):
@@ -306,11 +324,19 @@ def process_stream(cfg: dict):
             )
     contexts: Dict[str, dict] = {}
     log_paths = resolve_log_paths(runtime_cfg)
+    update_active_log_status(config_ws, cfg, log_paths)
 
     print(f"[OK] Google Sheet : {book.title}")
     print(f"[OK] Configuration : sheet {config_ws.title}")
     print(f"[OK] Log profile   : {runtime_cfg['log_profile']}")
     print(f"[OK] Log folder    : {resolve_log_folder(runtime_cfg)}")
+    if runtime_cfg.get("follow_latest_log", False):
+        print(
+            "[OK] Log selection : newest .log file "
+            f"(checked every {runtime_cfg['config_refresh_seconds']:g}s)"
+        )
+    else:
+        print("[OK] Log selection : configured log_files")
     print(f"[OK] Sample Count  : {', '.join(map(str, runtime_cfg['sample_counts']))}")
     wanted = runtime_cfg.get("world_structures") or []
     print(f"[OK] Config(s)     : {', '.join(wanted) if wanted else 'all'}")
@@ -374,8 +400,18 @@ def process_stream(cfg: dict):
                             book.batch_update,
                             {"requests": filter_requests},
                         )
+                previous_log_paths = log_paths
                 runtime_cfg = updated_cfg
                 log_paths = resolve_log_paths(runtime_cfg)
+                update_active_log_status(config_ws, cfg, log_paths)
+                if (
+                    runtime_cfg.get("follow_latest_log", False)
+                    and log_paths != previous_log_paths
+                ):
+                    if log_paths:
+                        print(f"[LOG] Newest log selected: {log_paths[0]}")
+                    else:
+                        print("[LOG] No .log file is currently available.")
             except Exception as exc:
                 print(f"[CONFIG] Invalid value; keeping the last valid configuration: {exc}")
             next_config_refresh = (

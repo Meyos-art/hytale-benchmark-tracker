@@ -53,6 +53,10 @@ Check that:
 - the target file ends in `.log`;
 - the account running the tracker can read the directory and file.
 
+If `follow_latest_log` is checked, `log_files` is ignored. Wait up to
+`config_refresh_seconds` after a new log is created; the console should then
+report `Newest log selected`.
+
 With a Windows profile, leave `log_folder_override` empty and select the
 matching location:
 

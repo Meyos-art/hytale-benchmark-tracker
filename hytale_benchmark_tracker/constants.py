@@ -10,7 +10,9 @@ END_RE = re.compile(r"Missed/Total Ratio:\s*([0-9.,]+)\s*%", re.IGNORECASE)
 
 # Hytale release builds include a logger name between INFO and SERVER, while
 # older pre-release builds leave that field empty. Accept both layouts.
-PREFIX_RE = re.compile(r"^.*?\|INFO\|[^|\r\n]*\|SERVER\s*-\s*")
+PREFIX_RE = re.compile(
+    r"^.*?\|INFO\|[^|\r\n]*\|SERVER[ \t]*-[ ]?"
+)
 
 LINE_DATA_RE = re.compile(r"^(?P<label>.*?):\s*(?P<data>.+?)\s*$")
 
@@ -75,12 +77,24 @@ HISTORY_FIXED_STAGE_ORDER = {
     "EnvironmentStage": 10010,
 }
 
+CONTENT_INITIALIZATION_ORDER = {
+    "Static Bounds Initialization": 0,
+    "Static Access Initialization": 1,
+    "Dynamic Bounds Initialization": 15,
+    "Dynamic Access Initialization": 16,
+}
+
 HISTORY_STAGE_DETAIL_ORDER = {
     "Preparation": 1,
     "Execution": 2,
     "Async Processes Start": 3,
     "Output Size (Buffer Column)": 1,
     "Output Size (Chunk Column)": 2,
+    "Maximum Possible Output Size (Buffer Column)": 1,
+    "Maximum Possible Output Size (Chunk Column)": 2,
+    "Average Actual Output Size (Buffer Column)": 3,
+    "Average Actual Output Size (Chunk Column)": 4,
+    "Total Buffers Generated": 5,
 }
 
 HISTORY_MEMORY_DETAIL_ORDER = {

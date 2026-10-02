@@ -1,6 +1,7 @@
 {
   "log_folder_override": "",
   "log_profile": "hytale_prerelease",
+  "follow_latest_log": false,
   "log_files": [
     "*.log"
   ],

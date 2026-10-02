@@ -54,6 +54,7 @@ def load_config(path: Path) -> dict:
     cfg.setdefault("sample_count", 1000)
     cfg.setdefault("sample_counts", [cfg["sample_count"]])
     cfg.setdefault("log_files", [cfg.get("log_file", "")])
+    cfg.setdefault("follow_latest_log", False)
     cfg.setdefault("log_profile", DEFAULT_LOG_PROFILE)
     # Backward compatibility: an existing local log_folder remains a local
     # override. It is never exposed to or overwritten by Google Sheets.
@@ -321,7 +322,11 @@ def config_default_rows(cfg: dict) -> List[List[object]]:
         ["log_profile", validate_log_profile(cfg.get("log_profile", DEFAULT_LOG_PROFILE)),
          "Safe local folder profile; paths stay in each user's local config"],
         ["log_files", ", ".join(str(item) for item in log_files if item),
-         "File names or local patterns (* and ?), without folders"],
+         "File names or local patterns (* and ?); ignored when follow_latest_log is checked"],
+        ["follow_latest_log", bool(cfg.get("follow_latest_log", False)),
+         "Checked = always follow the newest .log file in the active folder"],
+        ["active_log_file", "Waiting...",
+         "Read-only name of the log file currently being watched"],
         ["sample_counts", ", ".join(str(item) for item in sample_counts),
          "Accepted Sample Count values, separated by commas"],
         ["world_structures", ", ".join(cfg.get("world_structures", [])),
@@ -376,28 +381,32 @@ def ensure_config_sheet(book, cfg: dict):
         )
         values = defaults
     else:
-        existing_rows = {
-            str(row[0]).strip(): row_index
-            for row_index, row in enumerate(values[1:], start=2)
+        existing_by_name = {
+            str(row[0]).strip(): row
+            for row in values[1:]
             if row and str(row[0]).strip()
         }
-        missing = [row for row in defaults[1:] if str(row[0]) not in existing_rows]
-        text_updates = [{"range": "A1:C1", "values": [defaults[0]]}]
+        checkbox_names = {"collection_enabled", "test_mode", "follow_latest_log"}
+        ordered_values = [defaults[0]]
+        default_names = {str(row[0]) for row in defaults[1:]}
         for default_row in defaults[1:]:
-            row_index = existing_rows.get(str(default_row[0]))
-            if row_index:
-                text_updates.append({
-                    "range": f"C{row_index}",
-                    "values": [[default_row[2]]],
-                })
-        if missing:
-            start_row = len(values) + 1
-            text_updates.append({
-                "range": f"A{start_row}:C{start_row + len(missing) - 1}",
-                "values": missing,
-            })
-            values += missing
-        google_api_call(ws.batch_update, text_updates, value_input_option="RAW")
+            name = str(default_row[0])
+            existing = existing_by_name.get(name, [])
+            current_value = existing[1] if len(existing) > 1 else default_row[1]
+            if name in checkbox_names:
+                current_value = config_bool(current_value, bool(default_row[1]))
+            ordered_values.append([name, current_value, default_row[2]])
+        ordered_values.extend(
+            row for row in values[1:]
+            if row and str(row[0]).strip() not in default_names
+        )
+        values = ordered_values
+        google_api_call(
+            ws.update,
+            values=values,
+            range_name=f"A1:C{len(values)}",
+            value_input_option="RAW",
+        )
 
     config_rows = {
         str(row[0]).strip(): index
@@ -407,8 +416,10 @@ def ensure_config_sheet(book, cfg: dict):
     cfg["_basic_reference_status_row"] = config_rows.get(
         "basic_reference_status", len(defaults)
     )
+    cfg["_active_log_file_row"] = config_rows.get("active_log_file")
     enabled_row = config_rows.get("collection_enabled", 2)
     test_mode_row = config_rows.get("test_mode", 3)
+    follow_latest_row = config_rows.get("follow_latest_log")
     log_profile_row = config_rows.get("log_profile")
     requests = [
         {
@@ -622,6 +633,36 @@ def ensure_config_sheet(book, cfg: dict):
             }
         },
     ]
+    if follow_latest_row:
+        requests.insert(2, {
+            "setDataValidation": {
+                "range": {
+                    "sheetId": ws.id,
+                    "startRowIndex": follow_latest_row - 1,
+                    "endRowIndex": follow_latest_row,
+                    "startColumnIndex": 1,
+                    "endColumnIndex": 2,
+                },
+                "rule": {
+                    "condition": {"type": "BOOLEAN"},
+                    "strict": True,
+                    "showCustomUi": True,
+                },
+            }
+        })
+        requests.insert(3, {
+            "repeatCell": {
+                "range": {
+                    "sheetId": ws.id,
+                    "startRowIndex": follow_latest_row - 1,
+                    "endRowIndex": follow_latest_row,
+                    "startColumnIndex": 1,
+                    "endColumnIndex": 2,
+                },
+                "cell": {"userEnteredFormat": {"horizontalAlignment": "CENTER"}},
+                "fields": "userEnteredFormat.horizontalAlignment",
+            }
+        })
     if log_profile_row:
         requests.insert(2, {
             "setDataValidation": {
@@ -643,6 +684,33 @@ def ensure_config_sheet(book, cfg: dict):
                     "strict": True,
                     "showCustomUi": True,
                 },
+            }
+        })
+    active_log_row = config_rows.get("active_log_file")
+    if active_log_row:
+        requests.append({
+            "repeatCell": {
+                "range": {
+                    "sheetId": ws.id,
+                    "startRowIndex": active_log_row - 1,
+                    "endRowIndex": active_log_row,
+                    "startColumnIndex": 1,
+                    "endColumnIndex": 2,
+                },
+                "cell": {
+                    "userEnteredFormat": {
+                        "horizontalAlignment": "LEFT",
+                        "textFormat": {
+                            "foregroundColor": {"red": 0.32, "green": 0.35, "blue": 0.40},
+                            "italic": True,
+                        },
+                    }
+                },
+                "fields": (
+                    "userEnteredFormat.horizontalAlignment,"
+                    "userEnteredFormat.textFormat.foregroundColor,"
+                    "userEnteredFormat.textFormat.italic"
+                ),
             }
         })
     google_api_call(ws.spreadsheet.batch_update, {"requests": requests})
@@ -693,6 +761,23 @@ def update_basic_reference_status(ws, cfg: dict, reference: Optional[dict]):
     cfg["_basic_reference_status_value"] = status
 
 
+def update_active_log_status(ws, cfg: dict, log_paths: List[Path]):
+    """Show only active log file names and avoid writes when they do not change."""
+    status = ", ".join(path.name for path in log_paths) or "No matching .log file"
+    if cfg.get("_active_log_file_value") == status:
+        return
+    row = cfg.get("_active_log_file_row")
+    if not row:
+        return
+    google_api_call(
+        ws.update,
+        values=[[status]],
+        range_name=f"B{int(row)}",
+        value_input_option="RAW",
+    )
+    cfg["_active_log_file_value"] = status
+
+
 def read_sheet_config(ws, base_cfg: dict) -> dict:
     """Merge safe sheet settings with connection secrets from local JSON."""
     rows = google_api_call(ws.get, range_name="A2:B30")
@@ -708,6 +793,10 @@ def read_sheet_config(ws, base_cfg: dict) -> dict:
     parse_resume_datetime(cfg["resume_from"])
     cfg["log_profile"] = validate_log_profile(
         settings.get("log_profile", cfg.get("log_profile", DEFAULT_LOG_PROFILE))
+    )
+    cfg["follow_latest_log"] = config_bool(
+        settings.get("follow_latest_log", cfg.get("follow_latest_log", False)),
+        False,
     )
     cfg["log_files"] = validate_log_file_patterns(split_config_values(
         settings.get("log_files", ", ".join(cfg.get("log_files", [])))

@@ -170,6 +170,8 @@ non-sensitive settings:
 - `resume_from`: earliest benchmark date and time to import;
 - `log_profile`: safe local folder profile (`hytale_prerelease` or
   `hytale_release`);
+- `follow_latest_log`: when checked, automatically selects the most recently
+  modified `.log` file in the active profile folder;
 - `log_files`: file names or local patterns such as `*.log`, separated by commas;
 - `sample_counts`: accepted Sample Count values;
 - `world_structures`: accepted World Structure names, or blank for all;
@@ -189,6 +191,11 @@ an entire test period.
 
 The Config sheet can change safe runtime settings, but it never writes values
 back to `config.json`. Local paths and credentials always remain local.
+
+When `follow_latest_log` is checked, `log_files` is ignored. The active folder
+is scanned again every `config_refresh_seconds`, so the tracker automatically
+switches to a new log after Hytale restarts. The newest file is selected by its
+last-modified time.
 
 ## 5. Run and use the tracker
 

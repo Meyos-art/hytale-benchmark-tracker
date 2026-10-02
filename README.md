@@ -89,6 +89,9 @@ The tracker creates and maintains:
 
 Use `Test Mode` to mark new benchmarks as tests. Use the `Archive` checkbox to
 hide a benchmark from analysis without deleting it from `Benchmark History`.
+Enable `follow_latest_log` in the Config sheet to automatically follow the
+newest `.log` file after Hytale creates a new one. The folder is checked again
+at each `config_refresh_seconds` interval.
 
 Run at least one benchmark with `WorldStructure Name` set to `Basic`. The
 latest non-archived `Basic` benchmark becomes the fixed reference in column C
